@@ -16,6 +16,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -24,26 +26,17 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
-import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
-import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
-import org.springframework.security.web.util.matcher.RequestMatcher;
 
 
 //Filter Chain is the order of the filters that are applied to the incoming request to deny or accept the request.
@@ -100,76 +93,54 @@ public class SpringSecurityConfig {
     }
 
 
-    //permit all - allows all request vs authenticated - allows only authenticated request
 //    @Bean
 //    @Order(2)
 //    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
 //            throws Exception {
+//
 //        http
-//                .authorizeHttpRequests((authorize) -> authorize
-//                                //.requestMatchers("/api/signup", "/error").permitAll()
-//                                //.requestMatchers("/login/**").authenticated() // only authenticated users can access /products/**
-//                       .anyRequest().permitAll() // all other requests are allowed
+//                // If you're building a REST API, consider disabling CSRF
+//                .csrf(AbstractHttpConfigurer::disable)
+//                .authorizeHttpRequests(authorize ->
+//                        authorize
+//                                .requestMatchers("/api/signup", "/auth/signup", "/auth/validate").permitAll()
+//                                .anyRequest().authenticated()
+//                                // Example: Permit public access to signup endpoint but restrict client registration
+////                                .requestMatchers("/api/signup").permitAll()
+////                                .requestMatchers("/api/clients/register").permitAll()
+//                                // Permit all for demonstration; adjust as needed
 //                )
-//                // Form login handles the redirect to the login page from the
-//                // authorization server filter chain
 //                .formLogin(Customizer.withDefaults());
 //
 //        return http.build();
 //    }
+@Bean
+@Order(2)
+public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
+        throws Exception {
 
-    @Bean
-    @Order(2)
-    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
-            throws Exception {
+    http
+            .csrf(AbstractHttpConfigurer::disable)
+            .authorizeHttpRequests(authorize ->
+                    authorize
+                            // Permit POST to /auth/signup and /auth/validate, and any GET if necessary.
+                            .requestMatchers(HttpMethod.POST, "/auth/signup").permitAll()
+                            .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                            .requestMatchers("/auth/validate").permitAll()
+                            .requestMatchers(HttpMethod.POST, "/api/clients/register").permitAll()
+                            .anyRequest().authenticated()
+            )
+            // For REST API responses, use httpBasic() and disable formLogin
+//            .httpBasic(Customizer.withDefaults())
+//            .exceptionHandling(exception ->
+//                    exception.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+//            );
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
 
-        http
-                // If you're building a REST API, consider disabling CSRF
-                .csrf(AbstractHttpConfigurer::disable)
-                .authorizeHttpRequests(authorize ->
-                        authorize
-                                .requestMatchers("/api/signup", "/auth/signup", "/auth/validate").permitAll()
-                                .anyRequest().authenticated()
-                                // Example: Permit public access to signup endpoint but restrict client registration
-//                                .requestMatchers("/api/signup").permitAll()
-//                                .requestMatchers("/api/clients/register").permitAll()
-                                // Permit all for demonstration; adjust as needed
-                )
-                .formLogin(Customizer.withDefaults());
-
-        return http.build();
-    }
+    return http.build();
+}
 
 
-    //Spring Security provides a default implementation of UserDetailsService called InMemoryUserDetailsManager
-//    @Bean
-//    public UserDetailsService userDetailsService() {
-//        UserDetails userDetails = User.builder()
-//                .username("user")
-//                .password(bCryptPasswordEncoder.encode("password"))
-//                .roles("USER")
-//                .build();
-//
-//        return new InMemoryUserDetailsManager(userDetails);
-//    }
-
-    // @Bean
-    // public RegisteredClientRepository registeredClientRepository() {
-    // 	RegisteredClient oidcClient = RegisteredClient.withId(UUID.randomUUID().toString())
-    // 			.clientId("oidc-client")
-    // 			.clientSecret("{noop}secret")
-    // 			.clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-    // 			.authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-    // 			.authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-    // 			.redirectUri("http://127.0.0.1:8080/login/oauth2/code/oidc-client")
-    // 			.postLogoutRedirectUri("http://127.0.0.1:8080/")
-    // 			.scope(OidcScopes.OPENID)
-    // 			.scope(OidcScopes.PROFILE)
-    // 			.clientSettings(ClientSettings.builder().requireAuthorizationConsent(true).build())
-    // 			.build();
-
-    // 	return new InMemoryRegisteredClientRepository(oidcClient);
-    // }
 
     @Bean
     public JWKSource<SecurityContext> jwkSource() {
@@ -207,9 +178,62 @@ public class SpringSecurityConfig {
     }
 
     @Bean
+    public JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
+        return new NimbusJwtEncoder(jwkSource);
+    }
+
+    @Bean
     public AuthorizationServerSettings authorizationServerSettings() {
         return AuthorizationServerSettings.builder().build();
     }
 
+
+    //permit all - allows all request vs authenticated - allows only authenticated request
+//    @Bean
+//    @Order(2)
+//    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
+//            throws Exception {
+//        http
+//                .authorizeHttpRequests((authorize) -> authorize
+//                                //.requestMatchers("/api/signup", "/error").permitAll()
+//                                //.requestMatchers("/login/**").authenticated() // only authenticated users can access /products/**
+//                       .anyRequest().permitAll() // all other requests are allowed
+//                )
+//                // Form login handles the redirect to the login page from the
+//                // authorization server filter chain
+//                .formLogin(Customizer.withDefaults());
+//
+//        return http.build();
+//    }
+
+    //Spring Security provides a default implementation of UserDetailsService called InMemoryUserDetailsManager
+//    @Bean
+//    public UserDetailsService userDetailsService() {
+//        UserDetails userDetails = User.builder()
+//                .username("user")
+//                .password(bCryptPasswordEncoder.encode("password"))
+//                .roles("USER")
+//                .build();
+//
+//        return new InMemoryUserDetailsManager(userDetails);
+//    }
+
+    // @Bean
+    // public RegisteredClientRepository registeredClientRepository() {
+    // 	RegisteredClient oidcClient = RegisteredClient.withId(UUID.randomUUID().toString())
+    // 			.clientId("oidc-client")
+    // 			.clientSecret("{noop}secret")
+    // 			.clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+    // 			.authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+    // 			.authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+    // 			.redirectUri("http://127.0.0.1:8080/login/oauth2/code/oidc-client")
+    // 			.postLogoutRedirectUri("http://127.0.0.1:8080/")
+    // 			.scope(OidcScopes.OPENID)
+    // 			.scope(OidcScopes.PROFILE)
+    // 			.clientSettings(ClientSettings.builder().requireAuthorizationConsent(true).build())
+    // 			.build();
+
+    // 	return new InMemoryRegisteredClientRepository(oidcClient);
+    // }
 }
 

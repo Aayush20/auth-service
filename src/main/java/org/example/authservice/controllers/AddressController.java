@@ -53,16 +53,21 @@
 
 package org.example.authservice.controllers;
 
+import org.example.authservice.dtos.AddressMapper;
+import org.example.authservice.dtos.AddressRequestDTO;
+import org.example.authservice.dtos.AddressResponseDTO;
 import org.example.authservice.models.Address;
 import org.example.authservice.security.models.CustomUserDetails;
 import org.example.authservice.services.AddressService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/address")
@@ -73,28 +78,34 @@ public class AddressController {
 
     // Get addresses for the currently authenticated user.
     @GetMapping
-    public ResponseEntity<List<Address>> getAddresses() {
+    public ResponseEntity<List<AddressResponseDTO>> getAddresses() {
         CustomUserDetails userDetails = getCurrentUser();
         Long userId = userDetails.getUser().getId();
         List<Address> addresses = addressService.getAddressesForUser(userId);
-        return ResponseEntity.ok(addresses);
+        List<AddressResponseDTO> response = addresses.stream()
+                .map(AddressMapper::toDTO)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(response);
     }
 
     // Add a new address for the currently authenticated user.
     @PostMapping
-    public ResponseEntity<Address> addAddress(@RequestBody Address address) {
+    public ResponseEntity<AddressResponseDTO> addAddress(@RequestBody AddressRequestDTO addressDto) {
         CustomUserDetails userDetails = getCurrentUser();
         Long userId = userDetails.getUser().getId();
+        Address address = AddressMapper.toEntity(addressDto);
         Address savedAddress = addressService.addAddressToUser(userId, address);
-        return ResponseEntity.ok(savedAddress);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(AddressMapper.toDTO(savedAddress));
     }
 
     // Update an existing address.
     @PutMapping("/{addressId}")
-    public ResponseEntity<Address> updateAddress(@PathVariable Long addressId, @RequestBody Address addressDto) {
-        // Optionally, check ownership within AddressService or here.
-        Address updated = addressService.updateAddress(addressId, addressDto);
-        return ResponseEntity.ok(updated);
+    public ResponseEntity<AddressResponseDTO> updateAddress(@PathVariable Long addressId,
+                                                            @RequestBody AddressRequestDTO addressDto) {
+        // Ownership check should be done in the service layer.
+        Address updated = addressService.updateAddress(addressId, AddressMapper.toEntity(addressDto));
+        return ResponseEntity.ok(AddressMapper.toDTO(updated));
     }
 
     // Delete an address.
@@ -106,8 +117,8 @@ public class AddressController {
 
     // Helper method to get the current authenticated user details.
     private CustomUserDetails getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (CustomUserDetails) authentication.getPrincipal();
+        return (CustomUserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }
 }
+
 

@@ -10,7 +10,7 @@ public class UserProfileDTO {
     private String name;
     private String email;
     private String phoneNumber;
-    private List<Address> addresses;
+    private List<AddressResponseDTO> addresses;
 
     public Long getUserId() {
         return userId;
@@ -44,11 +44,11 @@ public class UserProfileDTO {
         this.phoneNumber = phoneNumber;
     }
 
-    public List<Address> getAddresses() {
+    public List<AddressResponseDTO> getAddresses() {
         return addresses;
     }
 
-    public void setAddresses(List<Address> addresses) {
+    public void setAddresses(List<AddressResponseDTO> addresses) {
         this.addresses = addresses;
     }
 }

@@ -1,8 +1,13 @@
 package org.example.authservice.security.dtos;
+import jakarta.validation.constraints.NotBlank;
+
 import java.util.List;
 public class ClientRegistrationDTO {
+    @NotBlank
     private String clientId;
+    @NotBlank
     private String clientSecret;
+    @NotBlank
     private String clientName;
     private List<String> clientAuthenticationMethods;
     private List<String> authorizationGrantTypes;

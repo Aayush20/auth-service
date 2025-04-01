@@ -23,7 +23,7 @@ public class User extends BaseModel {
     @Column(unique = true)
     private String email;
 
-    // You might add a phone number and/or other attributes as needed.
+    @Column(unique = true)
     private String phoneNumber;
 
     private String hashedPassword;

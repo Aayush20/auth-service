@@ -1,25 +1,20 @@
-package org.example.authservice.models;
+package org.example.authservice.dtos;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-
-@Entity
-@Getter
-@Setter
-//@Table(name = "address", indexes = {
-//        @Index(name = "idx_address_user_id", columnList = "user_id")
-//})
-public class Address extends BaseModel {
+public class AddressResponseDTO {
+    private Long id;
     private String street;
     private String city;
     private String state;
     private String country;
     private String zip;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
-    private User user;
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
 
     public String getStreet() {
         return street;
@@ -61,12 +56,5 @@ public class Address extends BaseModel {
         this.zip = zip;
     }
 
-    public User getUser() {
-        return user;
-    }
-
-    public void setUser(User user) {
-        this.user = user;
-    }
 }
 
