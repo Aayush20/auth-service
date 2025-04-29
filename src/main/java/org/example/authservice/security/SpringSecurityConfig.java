@@ -35,6 +35,9 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -94,7 +97,15 @@ public class SpringSecurityConfig {
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
             throws Exception {
         http
-                .csrf(AbstractHttpConfigurer::disable) // Disable CSRF protection for non-browser clients (e.g., APIs)
+                .cors(Customizer.withDefaults()) // for CORS
+                .csrf(AbstractHttpConfigurer::disable) // Disable CSRF protection for APIs
+                .headers(headers -> headers
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self';"))
+                )
+                .headers(headers -> headers
+                        .frameOptions(frameOptions -> frameOptions.deny())
+                )
+
                 .authorizeHttpRequests(authorize ->
                         authorize
                                 .requestMatchers(HttpMethod.POST, "/auth/signup").permitAll() // Public access to signup endpoint
@@ -111,35 +122,50 @@ public class SpringSecurityConfig {
     }
 
     // Bean to generate RSA keys for JWT signing and verification
+//    @Bean
+//    public JWKSource<SecurityContext> jwkSource() {
+//        // Generate RSA key pair. Typically, in a real-world scenario, keys are persisted and reused,
+//        // but for development purposes, they are regenerated on each application restart.
+//        KeyPair keyPair = generateRsaKey();
+//        RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
+//        RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
+//
+//        // Create RSAKey (JSON Web Key) from the public and private RSA keys
+//        RSAKey rsaKey = new RSAKey.Builder(publicKey)
+//                .privateKey(privateKey)
+//                .keyID(UUID.randomUUID().toString()) // Unique key ID for the JWT signing
+//                .build();
+//
+//        // Create a JWKSet (JSON Web Key Set) and expose it as an immutable JWK source
+//        JWKSet jwkSet = new JWKSet(rsaKey);
+//        return new ImmutableJWKSet<>(jwkSet); // Return read-only JWK source for JWT encoder/decoder
+//    }
+
     @Bean
-    public JWKSource<SecurityContext> jwkSource() {
-        // Generate RSA key pair. Typically, in a real-world scenario, keys are persisted and reused,
-        // but for development purposes, they are regenerated on each application restart.
-        KeyPair keyPair = generateRsaKey();
+    public JWKSource<SecurityContext> jwkSource(KeyPair keyPair) {
         RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
         RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
 
-        // Create RSAKey (JSON Web Key) from the public and private RSA keys
         RSAKey rsaKey = new RSAKey.Builder(publicKey)
                 .privateKey(privateKey)
-                .keyID(UUID.randomUUID().toString()) // Unique key ID for the JWT signing
+                .keyID(UUID.randomUUID().toString())
                 .build();
 
-        // Create a JWKSet (JSON Web Key Set) and expose it as an immutable JWK source
         JWKSet jwkSet = new JWKSet(rsaKey);
-        return new ImmutableJWKSet<>(jwkSet); // Return read-only JWK source for JWT encoder/decoder
+        return new ImmutableJWKSet<>(jwkSet);
     }
 
-    // Generate RSA key pair for signing JWT tokens
-    private static KeyPair generateRsaKey() {
+    @Bean
+    public KeyPair rsaKeyPair() {
         try {
             KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-            keyPairGenerator.initialize(2048); // 2048-bit RSA key pair
+            keyPairGenerator.initialize(2048);
             return keyPairGenerator.generateKeyPair();
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to generate RSA key pair", ex); // Handle any key generation failures
+            throw new IllegalStateException("Failed to generate RSA key pair", ex);
         }
     }
+
 
     // Bean for decoding incoming JWT tokens
     @Bean
@@ -161,4 +187,21 @@ public class SpringSecurityConfig {
         // Return default settings for the authorization server. You can modify them as needed for custom configurations.
         return AuthorizationServerSettings.builder().build();
     }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.addAllowedOriginPattern("*"); // Allow all origins for now
+        configuration.addAllowedMethod("*");         // Allow all HTTP methods
+        configuration.addAllowedHeader("*");         // Allow all headers
+        configuration.setAllowCredentials(true);     // Allow credentials (cookies, authorization)
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+
+
+
 }

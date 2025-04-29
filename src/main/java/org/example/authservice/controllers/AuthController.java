@@ -6,6 +6,7 @@ import org.example.authservice.dtos.UserRegisteredEvent;
 import org.example.authservice.dtos.UserRegistrationDTO;
 import org.example.authservice.models.User;
 import org.example.authservice.models.Role;
+import org.example.authservice.repositories.UserRepository;
 import org.example.authservice.security.models.CustomUserDetails;
 import org.example.authservice.services.UserService;
 import org.example.authservice.services.AuthService;
@@ -48,6 +49,9 @@ public class AuthController {
 
     @Autowired
     private JwtEncoder jwtEncoder;
+
+    @Autowired
+    private UserRepository userRepository;
 
     // Endpoint for user registration.
     @PostMapping("/signup")
@@ -108,6 +112,30 @@ public class AuthController {
     public ResponseEntity<Boolean> validateToken(@RequestHeader("Authorization") String token) {
         boolean valid = authService.validateToken(token);
         return ResponseEntity.ok(valid);
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<?> verifyEmail(@RequestParam("token") String token) {
+        if (token == null || token.isEmpty()) {
+            return ResponseEntity.badRequest().body("Verification token is missing.");
+        }
+
+        User user = userRepository.findByEmailVerificationToken(token)
+                .orElse(null);
+
+        if (user == null) {
+            return ResponseEntity.badRequest().body("Invalid or expired verification token.");
+        }
+
+        if (user.isEmailVerified()) {
+            return ResponseEntity.badRequest().body("Email already verified.");
+        }
+
+        user.setEmailVerified(true);
+        user.setEmailVerificationToken(null); // optional - clear token after verification
+        userRepository.save(user);
+
+        return ResponseEntity.ok("Email verified successfully!");
     }
 }
 

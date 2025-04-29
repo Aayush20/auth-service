@@ -43,8 +43,22 @@ public class User extends BaseModel {
     @JsonIgnore
     private List<Address> addresses = new ArrayList<>();
 
-    @Column(nullable = false)
+    // Email verified flag
+    @Column(name = "email_verified")
     private boolean emailVerified = false;
+
+    // Email verification token (used to verify email)
+    @Column(name = "email_verification_token")
+    private String emailVerificationToken;
+
+
+    public String getEmailVerificationToken() {
+        return emailVerificationToken;
+    }
+
+    public void setEmailVerificationToken(String emailVerificationToken) {
+        this.emailVerificationToken = emailVerificationToken;
+    }
 
     public String getRefreshToken() {
         return refreshToken;

@@ -11,6 +11,7 @@ import org.example.authservice.models.User;
 import org.example.authservice.repositories.RoleRepository;
 import org.example.authservice.repositories.UserRepository;
 import org.example.authservice.utils.PasswordValidator;
+import org.example.authservice.utils.TokenGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -50,6 +51,10 @@ public class UserService {
         user.setEmail(dto.getEmail());
         user.setPhoneNumber(dto.getPhoneNumber());
         user.setHashedPassword(passwordEncoder.encode(dto.getPassword()));
+
+        // ✅ Generate and set verification token
+        String verificationToken = TokenGenerator.generateToken();
+        user.setEmailVerificationToken(verificationToken);
         user.setEmailVerified(false);
 
         Optional<Role> defaultRole = roleRepository.findByValue(rbacProperties.getDefaultRole());
@@ -60,18 +65,8 @@ public class UserService {
 
         userRepository.save(user);
 
-        // ✅ Generate JWT using Nimbus
-        Instant now = Instant.now();
-        JwtClaimsSet claims = JwtClaimsSet.builder()
-                .subject(user.getEmail())
-                .issuedAt(now)
-                .expiresAt(now.plusSeconds(3600)) // 1 hour
-                .claim("roles", user.getRoles().stream().map(Role::getValue).collect(Collectors.toList()))
-                .build();
-
-        String token = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
-
-        return "User registered successfully! Token: " + token;
+        // ✅ Instead of generating JWT here, return verification instructions
+        return "User registered successfully! Please verify your email using token: " + verificationToken;
     }
 
     public Optional<User> getUserById(Long userId) {
