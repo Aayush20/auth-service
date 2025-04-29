@@ -5,14 +5,12 @@ import org.example.authservice.dtos.UserRegistrationDTO;
 import org.example.authservice.models.Role;
 import org.example.authservice.models.User;
 import org.example.authservice.repositories.RoleRepository;
+import org.example.authservice.repositories.TokenRepository;
 import org.example.authservice.repositories.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 
 import java.util.Optional;
 
@@ -25,24 +23,19 @@ class UserServiceTest {
     private UserService userService;
     private UserRepository userRepository;
     private RoleRepository roleRepository;
+    private TokenRepository tokenRepository;
     private BCryptPasswordEncoder passwordEncoder;
-    private JwtEncoder jwtEncoder;
     private RbacProperties rbacProperties;
 
     @BeforeEach
     void setUp() {
         userRepository = Mockito.mock(UserRepository.class);
         roleRepository = Mockito.mock(RoleRepository.class);
-        passwordEncoder = new BCryptPasswordEncoder();
-        jwtEncoder = Mockito.mock(JwtEncoder.class);
+        tokenRepository = Mockito.mock(TokenRepository.class);
+        passwordEncoder = new BCryptPasswordEncoder(); // real encoder
         rbacProperties = Mockito.mock(RbacProperties.class);
 
-        userService = new UserService(rbacProperties, userRepository, roleRepository, passwordEncoder, jwtEncoder);
-
-        // Mock JwtEncoder to return dummy token
-        Jwt mockJwt = Mockito.mock(Jwt.class);
-        when(mockJwt.getTokenValue()).thenReturn("mock-token");
-        when(jwtEncoder.encode(any(JwtEncoderParameters.class))).thenReturn(mockJwt);
+        userService = new UserService(tokenRepository, rbacProperties, userRepository, roleRepository, passwordEncoder);
     }
 
     @Test

@@ -19,7 +19,7 @@ import java.util.List;
 public class User extends BaseModel {
     private String name;
 
-    @Column(unique = true)
+    @Column(unique = true, nullable = false)
     private String email;
 
     @Column(unique = true)
@@ -47,18 +47,18 @@ public class User extends BaseModel {
     @Column(name = "email_verified")
     private boolean emailVerified = false;
 
-    // Email verification token (used to verify email)
-    @Column(name = "email_verification_token")
-    private String emailVerificationToken;
 
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Token> tokens = new ArrayList<>();
 
-    public String getEmailVerificationToken() {
-        return emailVerificationToken;
+    public List<Token> getTokens() {
+        return tokens;
     }
 
-    public void setEmailVerificationToken(String emailVerificationToken) {
-        this.emailVerificationToken = emailVerificationToken;
+    public void setTokens(List<Token> tokens) {
+        this.tokens = tokens;
     }
+
 
     public String getRefreshToken() {
         return refreshToken;

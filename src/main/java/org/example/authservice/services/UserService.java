@@ -1,44 +1,43 @@
 package org.example.authservice.services;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import org.example.authservice.configs.RbacProperties;
 import org.example.authservice.dtos.UserRegistrationDTO;
 import org.example.authservice.models.Role;
+import org.example.authservice.models.Token;
 import org.example.authservice.models.User;
 import org.example.authservice.repositories.RoleRepository;
+import org.example.authservice.repositories.TokenRepository;
 import org.example.authservice.repositories.UserRepository;
 import org.example.authservice.utils.PasswordValidator;
 import org.example.authservice.utils.TokenGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.oauth2.jwt.JwtClaimsSet;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
 
 @Service
 public class UserService {
 
+    private final TokenRepository tokenRepository;
     private final RbacProperties rbacProperties;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final BCryptPasswordEncoder passwordEncoder;
-    private final JwtEncoder jwtEncoder; //
 
     @Autowired
-    public UserService(RbacProperties rbacProperties,
+    public UserService(TokenRepository tokenRepository,
+                       RbacProperties rbacProperties,
                        UserRepository userRepository,
                        RoleRepository roleRepository,
-                       BCryptPasswordEncoder passwordEncoder,
-                       JwtEncoder jwtEncoder) {
+                       BCryptPasswordEncoder passwordEncoder) {
+        this.tokenRepository = tokenRepository;
         this.rbacProperties = rbacProperties;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
-        this.jwtEncoder = jwtEncoder;
     }
 
     public String registerUser(UserRegistrationDTO dto) {
@@ -52,11 +51,6 @@ public class UserService {
         user.setPhoneNumber(dto.getPhoneNumber());
         user.setHashedPassword(passwordEncoder.encode(dto.getPassword()));
 
-        // ✅ Generate and set verification token
-        String verificationToken = TokenGenerator.generateToken();
-        user.setEmailVerificationToken(verificationToken);
-        user.setEmailVerified(false);
-
         Optional<Role> defaultRole = roleRepository.findByValue(rbacProperties.getDefaultRole());
         if (defaultRole.isEmpty()) {
             throw new IllegalStateException("Default role '" + rbacProperties.getDefaultRole() + "' not found.");
@@ -65,8 +59,17 @@ public class UserService {
 
         userRepository.save(user);
 
-        // ✅ Instead of generating JWT here, return verification instructions
-        return "User registered successfully! Please verify your email using token: " + verificationToken;
+        // Create Email Verification Token
+        String tokenValue = TokenGenerator.generateToken();
+        Token token = new Token();
+        token.setToken(tokenValue);
+        token.setType(Token.TokenType.EMAIL_VERIFICATION);
+        token.setExpiryDate(Instant.now().plus(24, ChronoUnit.HOURS));
+        token.setUser(user);
+        tokenRepository.save(token);
+
+        // For now, return the token manually (simulate sending email)
+        return "User registered successfully! Please verify your email using token: " + tokenValue;
     }
 
     public Optional<User> getUserById(Long userId) {

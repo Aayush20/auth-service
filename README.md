@@ -1,87 +1,131 @@
 # Auth Service
 
-The **Auth Service** is a Spring Boot-based application that provides secure authentication and authorization for your microservices' ecosystem. It handles user registration, token issuance, validation, and exposes secure endpoints for managing user profiles and addresses. It also registers with Eureka for service discovery and is designed for easy integration with other microservices (e.g., Order Service and ProdCat Service).
+The **Auth Service** is a Spring Boot-based application providing secure authentication and authorization functionalities for a microservices ecosystem. It handles user registration, token issuance, validation, secure user management, and more. It supports easy integration with other microservices (e.g., Order Service, Product Catalog Service).
 
-## Features
+---
 
-- **User Registration & Default Role Assignment:**  
-  New user signups are registered with a default role (e.g., `CUSTOMER`). The password is encoded (using BCrypt) and role management is controlled through externalized RBAC properties.
+## 🚀 Features
 
-- **JWT-Based Authentication:**  
-  The service generates and validates JSON Web Tokens. RSA keys are generated at startup (for development only) and used for signing and validating tokens. (In production, persist keys to ensure token continuity.)
+- User Registration & Default Role Assignment (CUSTOMER)
+- JWT-Based Authentication (Access Tokens)
+- Secure Endpoints with Role-Based Access Control (RBAC)
+- Email Verification using Token
+- Forgot Password and Reset Password using Token
+- Dockerized Deployment
+- Swagger/OpenAPI Documentation
+- Eureka Client Support (Optional for Service Discovery)
+- Event Publishing (Future Integration: Kafka / RabbitMQ)
 
-- **Secure Endpoints:**
-    - Public endpoints: `/auth/signup`, `/auth/validate`
-    - Protected endpoints: `/api/profile`, `/api/address`
-    - Administrative endpoints (secured via method-level security): e.g., updating user roles via `/api/admin/users/{userId}/role`.
+---
 
-- **Eureka Client Integration:**  
-  The service is configured to register with a Eureka Server to allow for dynamic service discovery in a microservices architecture, while still supporting testing as a standalone service on its own port.
+## 🛠️ Technology Stack
 
-- **Event Publishing (Future-Proofing):**  
-  When a user signs up, a `UserRegisteredEvent` is published. Although no message broker is set up currently, this paves the way for future asynchronous workflows (e.g., sending welcome emails or updating downstream caches).
+- Java 21
+- Spring Boot 3.x
+- Spring Security & OAuth2 Authorization Server
+- Spring Data JPA + MySQL
+- JWT (Nimbus JOSE JWT)
+- Docker
+- GitHub Actions (CI)
+- Swagger/OpenAPI 3
 
-## Technology Stack
+---
 
-- **Spring Boot 3.x**
-- **Spring Security & OAuth2 Authorization Server**
-- **Spring Data JPA & MySQL**
-- **Eureka Client (Netflix OSS)**
-- **JWT (io.jsonwebtoken)**
-- **Maven for Build & Dependency Management**
+## 🏗️ Project Structure
 
-## Getting Started
+auth-service/ ├── configs/ ├── controllers/ ├── dtos/ ├── models/ ├── repositories/ ├── security/ ├── services/ ├── utils/ ├── resources/ │ ├── application-dev.properties │ ├── application-prod.properties │ ├── application.yml ├── Dockerfile ├── pom.xml └── README.md
+
+
+---
+
+## 📚 Getting Started
 
 ### Prerequisites
 
-- Java 11 or later (Java 21 is configured in this project)
-- Maven
-- A running MySQL database (update the JDBC URL, username, and password in `application.properties`)
-- (Optional) A running Eureka Server at `http://localhost:8761/eureka`
+- Java 21
+- Maven 3.8+
+- MySQL running locally (update DB config)
+- Optional: Eureka Server for service registration
 
-### Setup
+---
 
-1. **Clone the Repository:**
+### Run Locally
 
-    ```bash
-    git clone https://github.com/your-repo/AuthService.git
-    cd AuthService
-    ```
+```bash
+# Clone the repository
+git clone https://github.com/your-username/auth-service.git
 
-2. **Configure your application properties:**  
-   Ensure the settings in `src/main/resources/application.properties` match your environment. For testing in isolation, the Eureka client settings won’t affect you.
+# Navigate to project
+cd auth-service
 
-3. **Build the Project:**
+# Build the project
+./mvnw clean package
 
-    ```bash
-    mvn clean install
-    ```
+# Run the application
+java -jar target/auth-service-0.0.1-SNAPSHOT.jar
+```
 
-4. **Run the Application:**
+--- 
 
-    ```bash
-    mvn spring-boot:run
-    ```
+### API Documentation (Swagger UI)
 
-   The application will start on port **8081** (as configured) and can be tested via Postman.
+Once the application is running:
 
-### Endpoints
+- Visit: http://localhost:8081/swagger-ui.html
 
-- **User Registration:**  
-  `POST /auth/signup`  
-  Payload:
-  ```json
-  {
-      "name": "Aayush",
-      "email": "aayush@example.com",
-      "password": "yourpassword",
-      "phoneNumber": "1234567890"
-  }
+- Or: http://localhost:8081/swagger-ui/index.html
 
-Token Validation: POST /auth/validate Include the JWT in the Authorization header as Bearer <token>.
+✅ All available endpoints will be auto-documented there!
 
-User Profile: GET /api/profile Returns the current user's profile along with their addresses.
+---
 
-Address Management: Endpoints under /api/address support GET, POST, PUT, and DELETE to manage addresses.
+### 🐳 Docker Deployment
 
-Admin Role Updates: PUT /api/admin/users/{userId}/role Secured so that only users with the ADMIN role can update a user’s role.
+Build Docker Image
+
+```bash
+docker build -t auth-service .
+```
+
+Run Docker Container
+
+```bash
+docker run -p 8081:8081 auth-service
+```
+
+---
+
+### 🔥 Future Enhancements
+
+- Real Email Service Integration (SendGrid)
+
+- Refresh Token Implementation
+
+- OAuth2 Single Sign On (Google, GitHub)
+
+- SonarQube Code Quality Integration
+
+- Swagger Endpoint Grouping , Detailed Descriptions and response model schemas.
+
+- Account Locking after multiple failed login attempts
+
+- Password Reset Rate Limiting
+
+- Deploy to AWS EC2 using Docker Compose
+
+- Centralized Logging (ELK Stack)
+
+---
+
+### ⚙️ GitHub Actions CI/CD
+
+Every push or pull request to main triggers a Maven build automatically using GitHub Actions.
+
+- Workflow file: .github/workflows/maven.yml
+
+- Ensures code builds cleanly with every commit!
+
+---
+
+⭐ Thanks for Visiting! ⭐
+
