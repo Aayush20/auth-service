@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
@@ -56,7 +57,8 @@ public class AuthController {
             return ResponseEntity.badRequest().body(result);
         }
         // Publish an event so that other microservices may receive user data.
-        User user = userService.findByEmail(dto.getEmail());
+        Optional<User> useropt = userService.findByEmail(dto.getEmail());
+        User user = useropt.orElseThrow(() -> new IllegalStateException("User not found"));
         List<String> roles = user.getRoles().stream()
                 .map(Role::getValue)
                 .collect(Collectors.toList());

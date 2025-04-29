@@ -17,7 +17,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -34,35 +33,34 @@ import org.springframework.security.oauth2.server.authorization.config.annotatio
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
-
-
-//Filter Chain is the order of the filters that are applied to the incoming request to deny or accept the request.
 
 @Configuration
 @EnableWebSecurity
 public class SpringSecurityConfig {
+
     @Autowired
     private BCryptPasswordEncoder bCryptPasswordEncoder;
 
-    // Explicitly register a DaoAuthenticationProvider bean
+    // Register a DaoAuthenticationProvider bean for authentication using custom user details service and password encoding
     @Bean
     public DaoAuthenticationProvider daoAuthenticationProvider(
             org.springframework.security.core.userdetails.UserDetailsService userDetailsService) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setUserDetailsService(userDetailsService); // our custom user details service
-        provider.setPasswordEncoder(bCryptPasswordEncoder); // BCrypt for password matching
+        provider.setUserDetailsService(userDetailsService); // Custom user details service for authentication
+        provider.setPasswordEncoder(bCryptPasswordEncoder); // BCrypt password encoder for password hashing
         return provider;
     }
 
-    // Expose the AuthenticationManager if necessary (helps in some controllers or custom authentication endpoints)
+    // Expose AuthenticationManager for use in other components (e.g., custom authentication endpoints)
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
+        // AuthenticationManager is used to authenticate a user during login
         return configuration.getAuthenticationManager();
     }
 
+    // Security filter chain for OAuth2 authorization server configuration
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http)
@@ -74,166 +72,93 @@ public class SpringSecurityConfig {
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
                 .with(authorizationServerConfigurer, (authorizationServer) ->
                         authorizationServer
-                                .oidc(Customizer.withDefaults())	// Enable OpenID Connect 1.0
+                                .oidc(Customizer.withDefaults()) // Enable OpenID Connect 1.0
                 )
                 .authorizeHttpRequests((authorize) ->
                         authorize
-                                .anyRequest().authenticated()
+                                .anyRequest().authenticated() // All requests to authorization endpoints must be authenticated
                 )
-                // Redirect to the login page when not authenticated from the
-                // authorization endpoint
                 .exceptionHandling((exceptions) -> exceptions
                         .defaultAuthenticationEntryPointFor(
-                                new LoginUrlAuthenticationEntryPoint("/login"),
-                                new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
+                                new LoginUrlAuthenticationEntryPoint("/login"), // Redirect to login page if not authenticated
+                                new MediaTypeRequestMatcher(MediaType.TEXT_HTML) // Only for HTML requests
                         )
                 );
 
         return http.build();
     }
 
+    // Security filter chain for API endpoints with JWT authentication (for REST APIs)
+    @Bean
+    @Order(2)
+    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
+            throws Exception {
+        http
+                .csrf(AbstractHttpConfigurer::disable) // Disable CSRF protection for non-browser clients (e.g., APIs)
+                .authorizeHttpRequests(authorize ->
+                        authorize
+                                .requestMatchers(HttpMethod.POST, "/auth/signup").permitAll() // Public access to signup endpoint
+                                .requestMatchers(HttpMethod.POST, "/auth/login").permitAll() // Public access to login endpoint
+                                .requestMatchers("/auth/validate").permitAll() // Public access to validation endpoint
+                                .requestMatchers(HttpMethod.POST, "/api/clients/register").permitAll() // Public access to client registration
+                                .requestMatchers("/admin/**").hasRole("ADMIN") // Only ADMIN role can access /admin/** endpoints
+                                .requestMatchers("/user/**").hasRole("USER") // Only USER role can access /user/** endpoints
+                                .anyRequest().authenticated() // Any other requests must be authenticated
+                )
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults())); // Configure OAuth2 resource server with JWT authentication
 
-//    @Bean
-//    @Order(2)
-//    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
-//            throws Exception {
-//
-//        http
-//                // If you're building a REST API, consider disabling CSRF
-//                .csrf(AbstractHttpConfigurer::disable)
-//                .authorizeHttpRequests(authorize ->
-//                        authorize
-//                                .requestMatchers("/api/signup", "/auth/signup", "/auth/validate").permitAll()
-//                                .anyRequest().authenticated()
-//                                // Example: Permit public access to signup endpoint but restrict client registration
-////                                .requestMatchers("/api/signup").permitAll()
-////                                .requestMatchers("/api/clients/register").permitAll()
-//                                // Permit all for demonstration; adjust as needed
-//                )
-//                .formLogin(Customizer.withDefaults());
-//
-//        return http.build();
-//    }
-@Bean
-@Order(2)
-public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
-        throws Exception {
+        return http.build();
+    }
 
-    http
-            .csrf(AbstractHttpConfigurer::disable)
-            .authorizeHttpRequests(authorize ->
-                    authorize
-                            // Permit POST to /auth/signup and /auth/validate, and any GET if necessary.
-                            .requestMatchers(HttpMethod.POST, "/auth/signup").permitAll()
-                            .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
-                            .requestMatchers("/auth/validate").permitAll()
-                            .requestMatchers(HttpMethod.POST, "/api/clients/register").permitAll()
-                            .anyRequest().authenticated()
-            )
-            // For REST API responses, use httpBasic() and disable formLogin
-//            .httpBasic(Customizer.withDefaults())
-//            .exceptionHandling(exception ->
-//                    exception.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
-//            );
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
-
-    return http.build();
-}
-
-
-
+    // Bean to generate RSA keys for JWT signing and verification
     @Bean
     public JWKSource<SecurityContext> jwkSource() {
+        // Generate RSA key pair. Typically, in a real-world scenario, keys are persisted and reused,
+        // but for development purposes, they are regenerated on each application restart.
         KeyPair keyPair = generateRsaKey();
         RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
         RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
+
+        // Create RSAKey (JSON Web Key) from the public and private RSA keys
         RSAKey rsaKey = new RSAKey.Builder(publicKey)
                 .privateKey(privateKey)
-                .keyID(UUID.randomUUID().toString())
+                .keyID(UUID.randomUUID().toString()) // Unique key ID for the JWT signing
                 .build();
+
+        // Create a JWKSet (JSON Web Key Set) and expose it as an immutable JWK source
         JWKSet jwkSet = new JWKSet(rsaKey);
-        return new ImmutableJWKSet<>(jwkSet);
+        return new ImmutableJWKSet<>(jwkSet); // Return read-only JWK source for JWT encoder/decoder
     }
 
-    //The current JWK source regenerates a new RSA key pair every time the application starts.
-    //This is typical for a development or test setup, but in a production environment,
-    // you might want to externalize or persist the key material so that tokens remain verifiable across restarts.
-
+    // Generate RSA key pair for signing JWT tokens
     private static KeyPair generateRsaKey() {
-        KeyPair keyPair;
         try {
             KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-            keyPairGenerator.initialize(2048);
-            keyPair = keyPairGenerator.generateKeyPair();
+            keyPairGenerator.initialize(2048); // 2048-bit RSA key pair
+            return keyPairGenerator.generateKeyPair();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to generate RSA key pair", ex); // Handle any key generation failures
         }
-        catch (Exception ex) {
-            throw new IllegalStateException(ex);
-        }
-        return keyPair;
     }
 
+    // Bean for decoding incoming JWT tokens
     @Bean
     public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
+        // Configure JWT decoder with the JWK source to decode the JWT tokens
         return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
     }
 
+    // Bean for encoding JWT tokens for outgoing responses
     @Bean
     public JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
+        // Configure JWT encoder with the JWK source to encode JWT tokens
         return new NimbusJwtEncoder(jwkSource);
     }
 
+    // Bean for default authorization server settings
     @Bean
     public AuthorizationServerSettings authorizationServerSettings() {
+        // Return default settings for the authorization server. You can modify them as needed for custom configurations.
         return AuthorizationServerSettings.builder().build();
     }
-
-
-    //permit all - allows all request vs authenticated - allows only authenticated request
-//    @Bean
-//    @Order(2)
-//    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http)
-//            throws Exception {
-//        http
-//                .authorizeHttpRequests((authorize) -> authorize
-//                                //.requestMatchers("/api/signup", "/error").permitAll()
-//                                //.requestMatchers("/login/**").authenticated() // only authenticated users can access /products/**
-//                       .anyRequest().permitAll() // all other requests are allowed
-//                )
-//                // Form login handles the redirect to the login page from the
-//                // authorization server filter chain
-//                .formLogin(Customizer.withDefaults());
-//
-//        return http.build();
-//    }
-
-    //Spring Security provides a default implementation of UserDetailsService called InMemoryUserDetailsManager
-//    @Bean
-//    public UserDetailsService userDetailsService() {
-//        UserDetails userDetails = User.builder()
-//                .username("user")
-//                .password(bCryptPasswordEncoder.encode("password"))
-//                .roles("USER")
-//                .build();
-//
-//        return new InMemoryUserDetailsManager(userDetails);
-//    }
-
-    // @Bean
-    // public RegisteredClientRepository registeredClientRepository() {
-    // 	RegisteredClient oidcClient = RegisteredClient.withId(UUID.randomUUID().toString())
-    // 			.clientId("oidc-client")
-    // 			.clientSecret("{noop}secret")
-    // 			.clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-    // 			.authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-    // 			.authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-    // 			.redirectUri("http://127.0.0.1:8080/login/oauth2/code/oidc-client")
-    // 			.postLogoutRedirectUri("http://127.0.0.1:8080/")
-    // 			.scope(OidcScopes.OPENID)
-    // 			.scope(OidcScopes.PROFILE)
-    // 			.clientSettings(ClientSettings.builder().requireAuthorizationConsent(true).build())
-    // 			.build();
-
-    // 	return new InMemoryRegisteredClientRepository(oidcClient);
-    // }
 }
-
