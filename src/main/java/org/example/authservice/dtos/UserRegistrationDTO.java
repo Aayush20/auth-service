@@ -1,23 +1,29 @@
 package org.example.authservice.dtos;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 @Data
+@Schema(description = "User registration request payload")
 public class UserRegistrationDTO {
 
     @NotBlank
+    @Schema(description = "Full name", example = "Aayush Kumar")
     private String name;
 
     @Email
     @NotBlank
+    @Schema(description = "Email address", example = "aayush@example.com")
     private String email;
 
     @NotBlank
+    @Schema(description = "Password", example = "StrongPassword123!")
     private String password;
 
     @NotBlank
+    @Schema(description = "Phone number", example = "9876543210")
     private String phoneNumber;
 
     public String getName() {

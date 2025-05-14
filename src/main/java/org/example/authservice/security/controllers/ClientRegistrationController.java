@@ -1,5 +1,7 @@
 package org.example.authservice.security.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.example.authservice.security.dtos.ClientRegistrationDTO;
 import org.example.authservice.security.models.Client;
@@ -9,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+@Tag(name = "OAuth2 Client Registration")
 @RestController
 @RequestMapping("/api/clients")
 public class ClientRegistrationController {
@@ -16,6 +19,7 @@ public class ClientRegistrationController {
     @Autowired
     private ClientRegistrationService clientRegistrationService;
 
+    @Operation(summary = "Register new OAuth2 client")
     @PostMapping("/register")
     public ResponseEntity<?> registerClient(@Valid @RequestBody ClientRegistrationDTO registrationDTO) {
         try {
@@ -27,5 +31,3 @@ public class ClientRegistrationController {
         }
     }
 }
-
-
