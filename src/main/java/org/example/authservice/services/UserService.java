@@ -1,5 +1,6 @@
 package org.example.authservice.services;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
@@ -26,18 +27,21 @@ public class UserService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final SendGridEmailService emailService;
 
     @Autowired
     public UserService(TokenRepository tokenRepository,
                        RbacProperties rbacProperties,
                        UserRepository userRepository,
                        RoleRepository roleRepository,
-                       BCryptPasswordEncoder passwordEncoder) {
+                       BCryptPasswordEncoder passwordEncoder,
+                       SendGridEmailService emailService) {
         this.tokenRepository = tokenRepository;
         this.rbacProperties = rbacProperties;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
     }
 
     public String registerUser(UserRegistrationDTO dto) {
@@ -57,9 +61,13 @@ public class UserService {
         }
         user.getRoles().add(defaultRole.get());
 
+        if (dto.getScopes() != null && !dto.getScopes().isEmpty()) {
+            user.setScopes(dto.getScopes());
+        }
+
         userRepository.save(user);
 
-        // Create Email Verification Token
+        // Generate email verification token
         String tokenValue = TokenGenerator.generateToken();
         Token token = new Token();
         token.setToken(tokenValue);
@@ -68,7 +76,15 @@ public class UserService {
         token.setUser(user);
         tokenRepository.save(token);
 
-        // For now, return the token manually (simulate sending email)
+        try {
+            emailService.sendEmail(user.getEmail(),
+                    "Verify your email",
+                    "Welcome to our app! Please verify using this token:\n\n" + tokenValue);
+        } catch (IOException e) {
+            // Optional: log this for observability
+            System.err.println("Failed to send verification email: " + e.getMessage());
+        }
+
         return "User registered successfully! Please verify your email using token: " + tokenValue;
     }
 

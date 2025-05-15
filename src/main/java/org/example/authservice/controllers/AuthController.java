@@ -1,22 +1,21 @@
 package org.example.authservice.controllers;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.ExampleObject;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.example.authservice.dtos.LoginRequestDTO;
-import org.example.authservice.dtos.UserRegisteredEvent;
-import org.example.authservice.dtos.UserRegistrationDTO;
+import org.example.authservice.dtos.*;
+import org.example.authservice.models.RefreshToken;
 import org.example.authservice.models.Token;
 import org.example.authservice.models.User;
 import org.example.authservice.models.Role;
+import org.example.authservice.repositories.RefreshTokenRepository;
 import org.example.authservice.repositories.TokenRepository;
 import org.example.authservice.repositories.UserRepository;
+import org.example.authservice.security.jwt.JwtService;
 import org.example.authservice.security.models.CustomUserDetails;
+import org.example.authservice.services.RefreshTokenService;
+import org.example.authservice.services.SendGridEmailService;
 import org.example.authservice.services.UserService;
 import org.example.authservice.services.AuthService;
 import org.example.authservice.utils.TokenGenerator;
@@ -24,16 +23,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.oauth2.jwt.JwtClaimsSet;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -48,10 +47,13 @@ public class AuthController {
     @Autowired private AuthService authService;
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private AuthenticationManager authenticationManager;
-    @Autowired private JwtEncoder jwtEncoder;
     @Autowired private UserRepository userRepository;
     @Autowired private TokenRepository tokenRepository;
+    @Autowired private RefreshTokenRepository refreshTokenRepository;
     @Autowired private BCryptPasswordEncoder passwordEncoder;
+    @Autowired private JwtService jwtService;
+    @Autowired private RefreshTokenService refreshTokenService;
+    @Autowired private SendGridEmailService emailService;
 
     @Operation(summary = "User registration (signup)")
     @ApiResponse(responseCode = "201", description = "User created successfully")
@@ -64,37 +66,53 @@ public class AuthController {
 
         Optional<User> useropt = userService.findByEmail(dto.getEmail());
         User user = useropt.orElseThrow(() -> new IllegalStateException("User not found"));
-        List<String> roles = user.getRoles().stream().map(Role::getValue).collect(Collectors.toList());
+        List<String> roles = user.getRoles().stream().map(Role::getValue).map(Enum::name).collect(Collectors.toList());
         eventPublisher.publishEvent(new UserRegisteredEvent(this, user.getId(), user.getEmail(), roles));
 
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 
-    @Operation(summary = "User login and JWT token issuance")
-    @ApiResponse(responseCode = "200", description = "JWT issued")
+    @Operation(summary = "User login and get access + refresh token")
+    @ApiResponse(responseCode = "200", description = "JWT access and refresh tokens issued")
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequestDTO loginDto) {
         UsernamePasswordAuthenticationToken authRequest =
                 new UsernamePasswordAuthenticationToken(loginDto.getEmail(), loginDto.getPassword());
+
         try {
             Authentication authentication = authenticationManager.authenticate(authRequest);
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+            User user = userService.getByEmailOrThrow(userDetails.getUsername());
 
-            Instant now = Instant.now();
-            JwtClaimsSet claims = JwtClaimsSet.builder()
-                    .issuer("auth-service")
-                    .issuedAt(now)
-                    .expiresAt(now.plusSeconds(36000L))
-                    .subject(userDetails.getUsername())
-                    .claim("roles", userDetails.getAuthorities().stream()
-                            .map(role -> role.getAuthority()).collect(Collectors.toList()))
-                    .build();
+            String accessToken = jwtService.generateAccessToken(user);
+            String refreshToken = jwtService.generateRefreshToken(user);
+            refreshTokenService.create(user, refreshToken);
 
-            String token = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
-            return ResponseEntity.ok(Map.of("accessToken", token));
+            return ResponseEntity.ok(new AuthResponseDTO(accessToken, refreshToken));
         } catch (AuthenticationException ex) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
         }
+    }
+
+    @Operation(summary = "Refresh access token using a valid refresh token")
+    @PreAuthorize("isAuthenticated()")
+    @ApiResponse(responseCode = "200", description = "New access token issued")
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@RequestBody RefreshRequestDTO request) {
+        String oldTokenStr = request.getRefreshToken();
+        Optional<RefreshToken> oldToken = refreshTokenService.findByToken(oldTokenStr);
+
+        if (oldToken.isEmpty() || refreshTokenService.isExpired(oldToken.get())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Expired or invalid");
+        }
+
+        User user = oldToken.get().getUser();
+        refreshTokenService.revokeToken(oldToken.get()); // 🔁 Revoke old
+        String newRefresh = jwtService.generateRefreshToken(user);
+        refreshTokenService.create(user, newRefresh);    // 🆕 Save new
+
+        String newAccess = jwtService.generateAccessToken(user);
+        return ResponseEntity.ok(new AuthResponseDTO(newAccess, newRefresh));
     }
 
     @Operation(summary = "Validate JWT token")
@@ -126,7 +144,9 @@ public class AuthController {
     @PostMapping("/forgot-password")
     public ResponseEntity<String> forgotPassword(@RequestParam("email") String email) {
         Optional<User> optionalUser = userRepository.findByEmail(email);
-        if (optionalUser.isEmpty()) return ResponseEntity.badRequest().body("User not found.");
+        if (optionalUser.isEmpty()) {
+            return ResponseEntity.badRequest().body("User not found.");
+        }
 
         User user = optionalUser.get();
         String tokenValue = TokenGenerator.generateToken();
@@ -138,9 +158,22 @@ public class AuthController {
         token.setUser(user);
         tokenRepository.save(token);
 
-        // sendEmail(user.getEmail(), tokenValue); // future
-        return ResponseEntity.ok("Password reset token generated successfully!");
+        try {
+            emailService.sendEmail(
+                    user.getEmail(),
+                    "Reset Your Password",
+                    "You requested a password reset. Use this token to reset your password:\n\n" + tokenValue +
+                            "\n\nThis token will expire in 1 hour."
+            );
+        } catch (IOException e) {
+            // Optional: Log or alert in production
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to send password reset email.");
+        }
+
+        return ResponseEntity.ok("Password reset email sent successfully!");
     }
+
 
     @Operation(summary = "Reset password using token")
     @PostMapping("/reset-password")
@@ -160,4 +193,31 @@ public class AuthController {
 
         return ResponseEntity.ok("Password has been reset successfully.");
     }
+
+    @Operation(summary = "Logout and revoke refresh token")
+    @PreAuthorize("isAuthenticated()")
+    @DeleteMapping("/logout")
+    public ResponseEntity<String> logout(@RequestBody RefreshRequestDTO request) {
+        Optional<RefreshToken> token = refreshTokenService.findByToken(request.getRefreshToken());
+        if (token.isPresent()) {
+            refreshTokenService.revokeToken(token.get());
+            return ResponseEntity.ok("Refresh token revoked successfully.");
+        } else {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Token not found");
+        }
+    }
+
+    @Scheduled(cron = "0 0 2 * * ?") // every night at 2 AM
+    public void purgeExpiredTokens() {
+        List<RefreshToken> all = refreshTokenRepository.findAll();
+        all.stream()
+                .filter(refreshTokenService::isExpired)
+                .forEach(refreshTokenRepository::delete);
+    }
+
+    @Scheduled(cron = "0 0 3 * * ?") // Every day at 3 AM
+    public void purgeExpiredEmailResetTokens() {
+        tokenRepository.deleteAllByExpiryDateBefore(Instant.now());
+    }
+
 }

@@ -26,6 +26,7 @@ class UserServiceTest {
     private TokenRepository tokenRepository;
     private BCryptPasswordEncoder passwordEncoder;
     private RbacProperties rbacProperties;
+    private SendGridEmailService sendGridEmailService;
 
     @BeforeEach
     void setUp() {
@@ -34,8 +35,9 @@ class UserServiceTest {
         tokenRepository = Mockito.mock(TokenRepository.class);
         passwordEncoder = new BCryptPasswordEncoder(); // real encoder
         rbacProperties = Mockito.mock(RbacProperties.class);
+        sendGridEmailService = Mockito.mock(SendGridEmailService.class);
 
-        userService = new UserService(tokenRepository, rbacProperties, userRepository, roleRepository, passwordEncoder);
+        userService = new UserService(tokenRepository, rbacProperties, userRepository, roleRepository, passwordEncoder, sendGridEmailService);
     }
 
     @Test
@@ -50,7 +52,7 @@ class UserServiceTest {
         when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
 
         Role role = new Role();
-        role.setValue("CUSTOMER");
+        role.setValue(Role.RoleName.valueOf("CUSTOMER"));
 
         when(roleRepository.findByValue(anyString())).thenReturn(Optional.of(role));
         when(rbacProperties.getDefaultRole()).thenReturn("CUSTOMER");

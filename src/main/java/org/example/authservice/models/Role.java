@@ -1,31 +1,44 @@
 package org.example.authservice.models;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import jakarta.persistence.Entity;
-import lombok.Getter;
-import lombok.Setter;
+import jakarta.persistence.*;
 
 @Entity
-@Getter
-@Setter
-@JsonDeserialize(as = Role.class)
-public class Role extends BaseModel {
-    private String value;
+@Table(name = "roles")
+public class Role {
 
-    public Role(String roleUser) {
-        super();
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, unique = true)
+    private RoleName value;
+
+    public enum RoleName {
+        USER,
+        ADMIN,
+        SERVICE
     }
 
-    public Role() {
+    public Role() {}
 
+    public Role(RoleName value) {
+        this.value = value;
     }
 
-    public String getValue() {
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public RoleName getValue() {
         return value;
     }
 
-    public void setValue(String value) {
+    public void setValue(RoleName value) {
         this.value = value;
     }
 }
-
