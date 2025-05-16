@@ -9,15 +9,14 @@ import org.example.authservice.models.RefreshToken;
 import org.example.authservice.models.Token;
 import org.example.authservice.models.User;
 import org.example.authservice.models.Role;
+import org.example.authservice.ratelimit.RateLimit;
 import org.example.authservice.repositories.RefreshTokenRepository;
 import org.example.authservice.repositories.TokenRepository;
 import org.example.authservice.repositories.UserRepository;
 import org.example.authservice.security.jwt.JwtService;
 import org.example.authservice.security.models.CustomUserDetails;
-import org.example.authservice.services.RefreshTokenService;
-import org.example.authservice.services.SendGridEmailService;
-import org.example.authservice.services.UserService;
-import org.example.authservice.services.AuthService;
+import org.example.authservice.services.*;
+import org.example.authservice.utils.JwtClaimUtils;
 import org.example.authservice.utils.TokenGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -29,10 +28,13 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -54,6 +56,8 @@ public class AuthController {
     @Autowired private JwtService jwtService;
     @Autowired private RefreshTokenService refreshTokenService;
     @Autowired private SendGridEmailService emailService;
+    @Autowired private RefreshTokenBlacklistService blacklistService;
+
 
     @Operation(summary = "User registration (signup)")
     @ApiResponse(responseCode = "201", description = "User created successfully")
@@ -72,10 +76,12 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 
+    @RateLimit(requests = 5, durationSeconds = 60)
     @Operation(summary = "User login and get access + refresh token")
     @ApiResponse(responseCode = "200", description = "JWT access and refresh tokens issued")
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequestDTO loginDto) {
+
         UsernamePasswordAuthenticationToken authRequest =
                 new UsernamePasswordAuthenticationToken(loginDto.getEmail(), loginDto.getPassword());
 
@@ -83,6 +89,9 @@ public class AuthController {
             Authentication authentication = authenticationManager.authenticate(authRequest);
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             User user = userService.getByEmailOrThrow(userDetails.getUsername());
+            if (!user.isEmailVerified()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Email not verified. Please verify your email first.");
+            }
 
             String accessToken = jwtService.generateAccessToken(user);
             String refreshToken = jwtService.generateRefreshToken(user);
@@ -90,40 +99,76 @@ public class AuthController {
 
             return ResponseEntity.ok(new AuthResponseDTO(accessToken, refreshToken));
         } catch (AuthenticationException ex) {
+
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
         }
     }
 
     @Operation(summary = "Refresh access token using a valid refresh token")
-    @PreAuthorize("isAuthenticated()")
+    //@PreAuthorize("isAuthenticated()")
+    @RateLimit(requests = 10, durationSeconds = 60)
+    @PreAuthorize("hasAuthority('SCOPE_auth.refresh')")
     @ApiResponse(responseCode = "200", description = "New access token issued")
     @PostMapping("/refresh")
     public ResponseEntity<?> refresh(@RequestBody RefreshRequestDTO request) {
         String oldTokenStr = request.getRefreshToken();
-        Optional<RefreshToken> oldToken = refreshTokenService.findByToken(oldTokenStr);
 
+        // 🔐 Block if token is blacklisted
+        if (blacklistService.isBlacklisted(oldTokenStr)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token has been revoked or reused");
+        }
+
+        Optional<RefreshToken> oldToken = refreshTokenService.findByToken(oldTokenStr);
         if (oldToken.isEmpty() || refreshTokenService.isExpired(oldToken.get())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Expired or invalid");
         }
 
         User user = oldToken.get().getUser();
-        refreshTokenService.revokeToken(oldToken.get()); // 🔁 Revoke old
-        String newRefresh = jwtService.generateRefreshToken(user);
-        refreshTokenService.create(user, newRefresh);    // 🆕 Save new
+        refreshTokenService.revokeToken(oldToken.get());
 
+        // 🔒 Blacklist it for same TTL
+        Duration remainingTtl = Duration.between(Instant.now(), oldToken.get().getExpiryDate());
+        blacklistService.blacklist(oldTokenStr, remainingTtl);
+
+        String newRefresh = jwtService.generateRefreshToken(user);
+        refreshTokenService.create(user, newRefresh);
         String newAccess = jwtService.generateAccessToken(user);
+
         return ResponseEntity.ok(new AuthResponseDTO(newAccess, newRefresh));
     }
 
+
     @Operation(summary = "Validate JWT token")
     @PostMapping("/validate")
-    public ResponseEntity<Boolean> validateToken(@RequestHeader("Authorization") String token) {
-        boolean valid = authService.validateToken(token);
-        return ResponseEntity.ok(valid);
+    @PreAuthorize("hasAuthority('SCOPE_internal.call')")
+    public ResponseEntity<TokenIntrospectionResponseDTO> validateToken(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestHeader("Authorization") String tokenHeader
+    ) {
+        if (!JwtClaimUtils.isInternalService(jwt, "gateway-service") &&
+                !JwtClaimUtils.isInternalService(jwt, "order-service")) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        String token = tokenHeader.replace("Bearer ", "");
+        Jwt decoded = authService.decodeAndValidate(token);
+
+        TokenIntrospectionResponseDTO response = new TokenIntrospectionResponseDTO();
+        response.setActive(true);
+        response.setSub(decoded.getSubject());
+        response.setEmail(decoded.getClaimAsString("email"));
+        response.setExp(decoded.getExpiresAt().toEpochMilli());
+        response.setScopes(decoded.getClaimAsStringList("scope"));
+        response.setRoles(decoded.getClaimAsStringList("roles"));
+
+        return ResponseEntity.ok(response);
     }
 
-    @Operation(summary = "Verify email using token")
+
+    @RateLimit(requests = 5, durationSeconds = 60)
+
     @PostMapping("/verify-email")
+    @Operation(summary = "Verify email using token")
     public ResponseEntity<String> verifyEmail(@RequestParam("token") String tokenValue) {
         Optional<Token> optionalToken = tokenRepository.findByToken(tokenValue);
         if (optionalToken.isEmpty()) return ResponseEntity.badRequest().body("Invalid token.");
@@ -133,13 +178,46 @@ public class AuthController {
             return ResponseEntity.badRequest().body("Token has expired.");
 
         User user = token.getUser();
-        user.setEmailVerified(true);
-        userRepository.save(user);
-        tokenRepository.delete(token);
+        if (!user.isEmailVerified()) {
+            user.setEmailVerified(true);
+            userRepository.save(user);
+        }
 
+        tokenRepository.delete(token);
         return ResponseEntity.ok("Email verified successfully.");
     }
 
+    @RateLimit(requests = 3, durationSeconds = 60)
+    @PostMapping("/resend-verification")
+    @Operation(summary = "Resend email verification token")
+    public ResponseEntity<String> resendVerification(@RequestParam String email) {
+        Optional<User> optionalUser = userRepository.findByEmail(email);
+        if (optionalUser.isEmpty()) return ResponseEntity.badRequest().body("User not found.");
+        User user = optionalUser.get();
+
+        if (user.isEmailVerified()) return ResponseEntity.ok("Email already verified.");
+
+        // Optional: delete previous verification tokens
+        tokenRepository.deleteByUserIdAndType(user.getId(), Token.TokenType.EMAIL_VERIFICATION);
+
+        String tokenValue = TokenGenerator.generateToken();
+        Token token = new Token();
+        token.setToken(tokenValue);
+        token.setUser(user);
+        token.setExpiryDate(Instant.now().plus(30, ChronoUnit.MINUTES));
+        token.setType(Token.TokenType.EMAIL_VERIFICATION);
+        tokenRepository.save(token);
+
+        try {
+            emailService.sendEmail(user.getEmail(), "Email Verification Token",
+                    "Use this token to verify your email:\n\n" + tokenValue);
+            return ResponseEntity.ok("Verification email resent.");
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().body("Failed to send email.");
+        }
+    }
+
+    @RateLimit(requests = 3, durationSeconds = 60)
     @Operation(summary = "Request password reset email")
     @PostMapping("/forgot-password")
     public ResponseEntity<String> forgotPassword(@RequestParam("email") String email) {
@@ -195,13 +273,21 @@ public class AuthController {
     }
 
     @Operation(summary = "Logout and revoke refresh token")
-    @PreAuthorize("isAuthenticated()")
+    //@PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('SCOPE_auth.logout')")
     @DeleteMapping("/logout")
     public ResponseEntity<String> logout(@RequestBody RefreshRequestDTO request) {
-        Optional<RefreshToken> token = refreshTokenService.findByToken(request.getRefreshToken());
+        String tokenValue = request.getRefreshToken();
+        Optional<RefreshToken> token = refreshTokenService.findByToken(tokenValue);
+
         if (token.isPresent()) {
-            refreshTokenService.revokeToken(token.get());
-            return ResponseEntity.ok("Refresh token revoked successfully.");
+            RefreshToken refreshToken = token.get();
+            refreshTokenService.revokeToken(refreshToken);
+
+            Duration ttl = Duration.between(Instant.now(), refreshToken.getExpiryDate());
+            blacklistService.blacklist(tokenValue, ttl);
+
+            return ResponseEntity.ok("Refresh token revoked and blacklisted.");
         } else {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Token not found");
         }

@@ -14,4 +14,6 @@ public interface TokenRepository extends JpaRepository<Token, Long> {
     void deleteByUser(User user);
 
     void deleteAllByExpiryDateBefore(Instant time);
+
+    void deleteByUserIdAndType(Long id, Token.TokenType tokenType);
 }

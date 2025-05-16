@@ -14,22 +14,30 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Optional;
 
-@Tag(name = "Admin APIs")
 @RestController
 @RequestMapping("/api/admin")
+@Tag(name = "Admin APIs")
 public class AdminController {
 
     @Autowired private UserRepository userRepository;
     @Autowired private RoleRepository roleRepository;
 
     @Operation(summary = "Update a user's role (admin only)")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('SCOPE_admin.write')")
     @PutMapping("/users/{userId}/role")
     public ResponseEntity<String> updateUserRole(@PathVariable Long userId, @RequestParam String roleValue) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        Optional<Role> newRole = roleRepository.findByValue(roleValue);
+        Role.RoleName roleEnum;
+        try {
+            roleEnum = Role.RoleName.valueOf(roleValue.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Invalid role: " + roleValue);
+        }
+
+        Optional<Role> newRole = roleRepository.findByValue(roleEnum);
         if (newRole.isEmpty()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("Role " + roleValue + " does not exist.");
@@ -41,3 +49,4 @@ public class AdminController {
         return ResponseEntity.ok("User role updated successfully.");
     }
 }
+

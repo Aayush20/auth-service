@@ -14,15 +14,16 @@ import org.example.authservice.services.AddressService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Tag(name = "User - Address Management")
 @RestController
 @RequestMapping("/api/address")
+@Tag(name = "User - Address Management")
 public class AddressController {
 
     @Autowired
@@ -30,6 +31,7 @@ public class AddressController {
 
     @Operation(summary = "Get all addresses for authenticated user")
     @ApiResponse(responseCode = "200", description = "List of addresses returned")
+    @PreAuthorize("hasAuthority('SCOPE_address.read')")
     @GetMapping
     public ResponseEntity<List<AddressResponseDTO>> getAddresses() {
         CustomUserDetails userDetails = getCurrentUser();
@@ -43,6 +45,7 @@ public class AddressController {
 
     @Operation(summary = "Add new address for authenticated user")
     @ApiResponse(responseCode = "201", description = "Address added successfully")
+    @PreAuthorize("hasAuthority('SCOPE_address.write')")
     @PostMapping
     public ResponseEntity<AddressResponseDTO> addAddress(@RequestBody AddressRequestDTO addressDto) {
         CustomUserDetails userDetails = getCurrentUser();
@@ -55,6 +58,7 @@ public class AddressController {
 
     @Operation(summary = "Update address by ID")
     @ApiResponse(responseCode = "200", description = "Address updated successfully")
+    @PreAuthorize("hasAuthority('SCOPE_address.write')")
     @PutMapping("/{addressId}")
     public ResponseEntity<AddressResponseDTO> updateAddress(@PathVariable Long addressId,
                                                             @RequestBody AddressRequestDTO addressDto) {
@@ -64,6 +68,7 @@ public class AddressController {
 
     @Operation(summary = "Delete address by ID")
     @ApiResponse(responseCode = "200", description = "Address deleted")
+    @PreAuthorize("hasAuthority('SCOPE_address.write')")
     @DeleteMapping("/{addressId}")
     public ResponseEntity<Void> deleteAddress(@PathVariable Long addressId) {
         addressService.deleteAddress(addressId);
@@ -74,3 +79,4 @@ public class AddressController {
         return (CustomUserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }
 }
+

@@ -3,6 +3,7 @@ package org.example.authservice.services;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Service;
 
@@ -66,4 +67,10 @@ public class AuthService {
             return false;
         }
     }
+
+    public Jwt decodeAndValidate(String token) {
+        JwtDecoder decoder = JwtDecoders.fromIssuerLocation("http://localhost:8080"); // Or use Nimbus
+        return decoder.decode(token);
+    }
+
 }
