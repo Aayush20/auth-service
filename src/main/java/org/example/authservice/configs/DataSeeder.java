@@ -65,6 +65,8 @@ public class DataSeeder {
     private void seedInternalClients() {
         seedClient("gateway@example.com", "gateway@123", Role.RoleName.SERVICE);
         seedClient("order@example.com", "order@123", Role.RoleName.SERVICE);
+        seedClient("prod-cat@example.com", "prodcat@123", Role.RoleName.SERVICE);
+        seedClient("payment@example.com", "payment@123", Role.RoleName.SERVICE);
     }
 
     private void seedClient(String email, String password, Role.RoleName roleName) {

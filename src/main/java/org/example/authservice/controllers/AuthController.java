@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.example.authservice.configs.AuthValidationProperties;
 import org.example.authservice.dtos.*;
 import org.example.authservice.models.RefreshToken;
 import org.example.authservice.models.Token;
@@ -57,6 +58,8 @@ public class AuthController {
     @Autowired private RefreshTokenService refreshTokenService;
     @Autowired private SendGridEmailService emailService;
     @Autowired private RefreshTokenBlacklistService blacklistService;
+    @Autowired private AuthValidationProperties validationProps;
+
 
 
     @Operation(summary = "User registration (signup)")
@@ -138,15 +141,14 @@ public class AuthController {
     }
 
 
-    @Operation(summary = "Validate JWT token")
-    @PostMapping("/validate")
+    @Operation(summary = "Validate JWT token for internal services")
     @PreAuthorize("hasAuthority('SCOPE_internal.call')")
+    @PostMapping("/validate")
     public ResponseEntity<TokenIntrospectionResponseDTO> validateToken(
             @AuthenticationPrincipal Jwt jwt,
             @RequestHeader("Authorization") String tokenHeader
     ) {
-        if (!JwtClaimUtils.isInternalService(jwt, "gateway-service") &&
-                !JwtClaimUtils.isInternalService(jwt, "order-service")) {
+        if (!JwtClaimUtils.isInternalService(jwt, validationProps.getInternalAllowedSubjects())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
@@ -163,6 +165,7 @@ public class AuthController {
 
         return ResponseEntity.ok(response);
     }
+
 
 
     @RateLimit(requests = 5, durationSeconds = 60)

@@ -55,7 +55,9 @@ public class UserService {
         user.setPhoneNumber(dto.getPhoneNumber());
         user.setHashedPassword(passwordEncoder.encode(dto.getPassword()));
 
-        Optional<Role> defaultRole = roleRepository.findByValue(rbacProperties.getDefaultRole());
+        Role.RoleName defaultRoleEnum = Role.RoleName.valueOf(rbacProperties.getDefaultRole());
+        Optional<Role> defaultRole = roleRepository.findByValue(defaultRoleEnum);
+
         if (defaultRole.isEmpty()) {
             throw new IllegalStateException("Default role '" + rbacProperties.getDefaultRole() + "' not found.");
         }
