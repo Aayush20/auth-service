@@ -35,7 +35,8 @@ public class ProfileController {
     @Autowired private UserService userService;
     @Autowired private AddressService addressService;
 
-    @Operation(summary = "Get current authenticated user's full profile")
+    @Operation(summary = "Get current authenticated user's full profile", security = @SecurityRequirement(name = "bearerAuth"))
+
     @PreAuthorize("hasAuthority('SCOPE_profile.read')")
     @GetMapping
     public ResponseEntity<UserProfileDTO> getUserProfile() {
