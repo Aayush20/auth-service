@@ -1,5 +1,7 @@
 package org.example.authservice.controllers;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,6 +23,7 @@ import org.example.authservice.utils.JwtClaimUtils;
 import org.example.authservice.utils.TokenGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -59,6 +62,9 @@ public class AuthController {
     @Autowired private SendGridEmailService emailService;
     @Autowired private RefreshTokenBlacklistService blacklistService;
     @Autowired private AuthValidationProperties validationProps;
+    @Autowired private StringRedisTemplate redisTemplate;
+    @Autowired private MeterRegistry meterRegistry;
+
 
 
 
@@ -152,19 +158,38 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        String token = tokenHeader.replace("Bearer ", "");
-        Jwt decoded = authService.decodeAndValidate(token);
+        String token = tokenHeader.replace("Bearer ", "").trim();
+        String cacheKey = "introspect:" + token;
 
-        TokenIntrospectionResponseDTO response = new TokenIntrospectionResponseDTO();
-        response.setActive(true);
-        response.setSub(decoded.getSubject());
-        response.setEmail(decoded.getClaimAsString("email"));
-        response.setExp(decoded.getExpiresAt().toEpochMilli());
-        response.setScopes(decoded.getClaimAsStringList("scope"));
-        response.setRoles(decoded.getClaimAsStringList("roles"));
+        try {
+            // 1. Check cache
+            String cached = redisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                meterRegistry.counter("auth.introspection.cache.hit").increment();
+                TokenIntrospectionResponseDTO response = new ObjectMapper().readValue(cached, TokenIntrospectionResponseDTO.class);
+                return ResponseEntity.ok(response);
+            }
 
-        return ResponseEntity.ok(response);
+            // 2. Decode + build response
+            Jwt decoded = authService.decodeAndValidate(token);
+            TokenIntrospectionResponseDTO response = new TokenIntrospectionResponseDTO();
+            response.setActive(true);
+            response.setSub(decoded.getSubject());
+            response.setEmail(decoded.getClaimAsString("email"));
+            response.setExp(decoded.getExpiresAt().toEpochMilli());
+            response.setScopes(decoded.getClaimAsStringList("scope"));
+            response.setRoles(decoded.getClaimAsStringList("roles"));
+
+            meterRegistry.counter("auth.introspection.cache.miss").increment();
+            // 3. Store in cache (TTL = 5 min)
+            redisTemplate.opsForValue().set(cacheKey, new ObjectMapper().writeValueAsString(response), Duration.ofMinutes(5));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
+
 
 
 
@@ -212,8 +237,10 @@ public class AuthController {
         tokenRepository.save(token);
 
         try {
-            emailService.sendEmail(user.getEmail(), "Email Verification Token",
-                    "Use this token to verify your email:\n\n" + tokenValue);
+            Map<String, Object> model = new HashMap<>();
+            model.put("userName", user.getName());
+            model.put("token", tokenValue);
+            emailService.sendTemplatedEmail(user.getEmail(), "Email Verification Token", "verify-email", model);
             return ResponseEntity.ok("Verification email resent.");
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body("Failed to send email.");
@@ -240,12 +267,11 @@ public class AuthController {
         tokenRepository.save(token);
 
         try {
-            emailService.sendEmail(
-                    user.getEmail(),
-                    "Reset Your Password",
-                    "You requested a password reset. Use this token to reset your password:\n\n" + tokenValue +
-                            "\n\nThis token will expire in 1 hour."
-            );
+            Map<String, Object> model = new HashMap<>();
+            model.put("userName", user.getName());
+            model.put("token", tokenValue);
+            emailService.sendTemplatedEmail(user.getEmail(), "Reset Your Password", "reset-password", model);
+
         } catch (IOException e) {
             // Optional: Log or alert in production
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

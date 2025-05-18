@@ -3,6 +3,8 @@ package org.example.authservice.services;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import org.example.authservice.configs.RbacProperties;
@@ -79,9 +81,11 @@ public class UserService {
         tokenRepository.save(token);
 
         try {
-            emailService.sendEmail(user.getEmail(),
-                    "Verify your email",
-                    "Welcome to our app! Please verify using this token:\n\n" + tokenValue);
+            Map<String, Object> model = new HashMap<>();
+            model.put("userName", user.getName());
+            model.put("token", tokenValue);
+            emailService.sendTemplatedEmail(user.getEmail(), "Verify your email", "verify-email", model);
+
         } catch (IOException e) {
             // Optional: log this for observability
             System.err.println("Failed to send verification email: " + e.getMessage());

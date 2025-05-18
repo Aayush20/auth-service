@@ -1,131 +1,130 @@
-# Auth Service
+# 🔐 Auth Service
 
-The **Auth Service** is a Spring Boot-based application providing secure authentication and authorization functionalities for a microservices ecosystem. It handles user registration, token issuance, validation, secure user management, and more. It supports easy integration with other microservices (e.g., Order Service, Product Catalog Service).
+The **Auth Service** is a core Spring Boot microservice responsible for user authentication, authorization, token management, and role/scope-based access control in a production-grade e-commerce system.
 
 ---
 
 ## 🚀 Features
 
-- User Registration & Default Role Assignment (CUSTOMER)
-- JWT-Based Authentication (Access Tokens)
-- Secure Endpoints with Role-Based Access Control (RBAC)
-- Email Verification using Token
-- Forgot Password and Reset Password using Token
-- Dockerized Deployment
-- Swagger/OpenAPI Documentation
-- Eureka Client Support (Optional for Service Discovery)
-- Event Publishing (Future Integration: Kafka / RabbitMQ)
+- ✅ OAuth2 Authorization Server (Access + Refresh Tokens)
+- ✅ Secure Login with JWT Token Generation
+- ✅ Email Verification on Signup
+- ✅ Forgot & Reset Password via Secure Tokens
+- ✅ Role-Based Access Control (Admin, Customer, Internal)
+- ✅ Scope-Based Microservice Authorization
+- ✅ Token Introspection API (`/auth/validate`)
+- ✅ Refresh Token Rotation & Blacklisting
+- ✅ Redis-backed Blacklist for Logout
+- ✅ Swagger OpenAPI 3.0 Documentation
+- ✅ Dockerized with GitHub Actions CI
+- ✅ MDC Logging (userId, requestId)
 
 ---
 
-## 🛠️ Technology Stack
+## 🧰 Tech Stack
 
 - Java 21
 - Spring Boot 3.x
-- Spring Security & OAuth2 Authorization Server
+- Spring Security + OAuth2 Auth Server
 - Spring Data JPA + MySQL
-- JWT (Nimbus JOSE JWT)
+- JWT (Nimbus)
+- Redis
+- SendGrid Email
 - Docker
-- GitHub Actions (CI)
-- Swagger/OpenAPI 3
+- GitHub Actions CI
 
 ---
 
-## 🏗️ Project Structure
+## 📂 Folder Structure
 
-auth-service/ ├── configs/ ├── controllers/ ├── dtos/ ├── models/ ├── repositories/ ├── security/ ├── services/ ├── utils/ ├── resources/ │ ├── application-dev.properties │ ├── application-prod.properties │ ├── application.yml ├── Dockerfile ├── pom.xml └── README.md
-
+```
+auth-service/
+├── configs/
+├── controllers/
+├── dtos/
+├── models/
+├── repositories/
+├── security/
+├── services/
+├── utils/
+├── resources/
+│   └── application.properties
+├── Dockerfile
+├── pom.xml
+└── README.md
+```
 
 ---
 
-## 📚 Getting Started
+## 📦 Running the Service
 
-### Prerequisites
+### 1. Prerequisites
 
-- Java 21
-- Maven 3.8+
-- MySQL running locally (update DB config)
-- Optional: Eureka Server for service registration
+- Java 21, Maven
+- MySQL & Redis running
+- Eureka Server if using service discovery
 
----
-
-### Run Locally
+### 2. Run Locally
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/auth-service.git
-
-# Navigate to project
-cd auth-service
-
-# Build the project
-./mvnw clean package
-
-# Run the application
+./mvnw clean install
 java -jar target/auth-service-0.0.1-SNAPSHOT.jar
 ```
 
---- 
+### 3. Swagger
 
-### API Documentation (Swagger UI)
-
-Once the application is running:
-
-- Visit: http://localhost:8081/swagger-ui.html
-
-- Or: http://localhost:8081/swagger-ui/index.html
-
-✅ All available endpoints will be auto-documented there!
+- [http://localhost:8081/swagger-ui.html](http://localhost:8081/swagger-ui.html)
 
 ---
 
-### 🐳 Docker Deployment
+## 📬 Email Support
 
-Build Docker Image
+- SendGrid used to send:
+    - Verification links
+    - Password reset links
+- Configurable from `application.properties`
+
+---
+
+## 🔐 Security
+
+- JWT access token verification
+- Redis token blacklist on logout
+- Role (`ROLE_ADMIN`, etc.) and Scope (`SCOPE_internal`, etc.)
+- `/auth/validate` used by other services
+
+---
+
+## 📈 Observability
+
+- Prometheus-compatible metrics
+- Structured logs with MDC
+
+---
+
+## 🐳 Docker
 
 ```bash
 docker build -t auth-service .
-```
-
-Run Docker Container
-
-```bash
 docker run -p 8081:8081 auth-service
 ```
 
 ---
 
-### 🔥 Future Enhancements
+## 🚀 CI/CD
 
-- Real Email Service Integration (SendGrid)
-
-- Refresh Token Implementation
-
-- OAuth2 Single Sign On (Google, GitHub)
-
-- SonarQube Code Quality Integration
-
-- Swagger Endpoint Grouping , Detailed Descriptions and response model schemas.
-
-- Account Locking after multiple failed login attempts
-
-- Password Reset Rate Limiting
-
-- Deploy to AWS EC2 using Docker Compose
-
-- Centralized Logging (ELK Stack)
+- GitHub Actions Maven build + test + Docker build
 
 ---
 
-### ⚙️ GitHub Actions CI/CD
+## 🧠 Future Enhancements
 
-Every push or pull request to main triggers a Maven build automatically using GitHub Actions.
-
-- Workflow file: .github/workflows/maven.yml
-
-- Ensures code builds cleanly with every commit!
-
----
-
-⭐ Thanks for Visiting! ⭐
-
+| Feature                              | Status   |
+|--------------------------------------|----------|
+| Google/GitHub SSO                    | ⏳ Pending |
+| Account Locking after failed attempts| ⏳ Pending |
+| Rate limiting for login/reset APIs   | ⏳ Pending |
+| Swagger grouping + example schemas   | ⏳ Pending |
+| Deployment automation (ECR/GCP/AWS)  | ⏳ Pending |
+| ELK/Zipkin/Grafana integration       | ⏳ Pending |
+| DB migration with Flyway             | ⏳ Pending |
